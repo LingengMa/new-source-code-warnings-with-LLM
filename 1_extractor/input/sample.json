@@ -1,0 +1,14 @@
+{
+        "tool_name": "semgrep",
+        "project_name": "vim",
+        "project_name_with_version": "vim-9.1.1896",
+        "project_version": "9.1.1896",
+        "file_path": "src/which.sh",
+        "line_number": 6,
+        "cwe": [
+            "CWE-20"
+        ],
+        "rule_id": "bash.lang.security.ifs-tampering.ifs-tampering",
+        "message": "The special variable IFS affects how splitting takes place when expanding unquoted variables. Don't set it globally. Prefer a dedicated utility such as 'cut' or 'awk' if you need to split input data. If you must use 'read', set IFS locally using e.g. 'IFS=\",\" read -a my_array'.",
+        "severity": "WARNING"
+}
