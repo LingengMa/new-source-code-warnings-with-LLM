@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 
 BASE_DIR = Path(__file__).parent
 INPUT_DIR = BASE_DIR / "input" / "data"
+REPO_DIR = BASE_DIR / "input" / "repository"
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_FILE = OUTPUT_DIR / "data_all.json"
 
@@ -22,9 +23,39 @@ OUTPUT_FILE = OUTPUT_DIR / "data_all.json"
 # 工具函数
 # ---------------------------------------------------------------------------
 
-def version_to_underscore(version: str) -> str:
-    """将版本号中的点替换为下划线，如 8.7.1 → 8_7_1"""
-    return version.replace(".", "_")
+def resolve_project_name_with_version(project_name: str, project_version: str) -> str:
+    """
+    通过查找 input/repository/ 中的实际目录名来确定 project_name_with_version。
+    匹配策略（按优先级）：
+      1. <project>-<version>（点格式，如 ffmpeg-7.1.1）
+      2. <project>-<version_underscore>（下划线格式，如 curl-8_7_1）
+      3. 扫描所有以 <project>- 开头的目录，找版本号匹配的（处理 openssl-openssl-3.x.x 等特殊情况）
+    若均未找到，默认返回点格式。
+    """
+    dot_ver = project_version
+    under_ver = project_version.replace(".", "_")
+
+    candidates = [
+        f"{project_name}-{dot_ver}",
+        f"{project_name}-{under_ver}",
+    ]
+    for name in candidates:
+        if (REPO_DIR / name).is_dir():
+            return name
+
+    # 扫描匹配：目录以 project_name- 开头且以版本号结尾（支持中间有额外段，如 openssl-openssl-3.2.1）
+    if REPO_DIR.is_dir():
+        prefix = f"{project_name}-"
+        for entry in REPO_DIR.iterdir():
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if name.lower().startswith(prefix) and (
+                name.endswith(f"-{dot_ver}") or name.endswith(f"-{under_ver}")
+            ):
+                return name
+
+    return f"{project_name}-{dot_ver}"
 
 
 def parse_project_version_from_name(name: str, tool: str) -> tuple[str, str]:
@@ -81,7 +112,7 @@ def extract_codeql(sarif_path: Path, project_name: str, project_version: str) ->
     with open(sarif_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    project_name_with_version = f"{project_name}-{version_to_underscore(project_version)}"
+    project_name_with_version = resolve_project_name_with_version(project_name, project_version)
     run = data["runs"][0]
     rules = {r["id"]: r for r in run["tool"]["driver"].get("rules", [])}
     warnings = []
@@ -135,7 +166,7 @@ def extract_cppcheck(xml_path: Path, project_name: str, project_version: str) ->
     if errors_elem is None:
         return []
 
-    project_name_with_version = f"{project_name}-{version_to_underscore(project_version)}"
+    project_name_with_version = resolve_project_name_with_version(project_name, project_version)
     warnings = []
 
     for error in errors_elem:
@@ -176,7 +207,7 @@ def extract_csa(index_html: Path, project_name: str, project_version: str) -> li
     with open(index_html, encoding="utf-8") as f:
         soup = BeautifulSoup(f, "lxml")
 
-    project_name_with_version = f"{project_name}-{version_to_underscore(project_version)}"
+    project_name_with_version = resolve_project_name_with_version(project_name, project_version)
     warnings = []
 
     # 报告表格中每行 class 以 bt_ 开头
@@ -217,7 +248,7 @@ def extract_semgrep(json_path: Path, project_name: str, project_version: str) ->
     with open(json_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    project_name_with_version = f"{project_name}-{version_to_underscore(project_version)}"
+    project_name_with_version = resolve_project_name_with_version(project_name, project_version)
     warnings = []
 
     for result in data.get("results", []):
