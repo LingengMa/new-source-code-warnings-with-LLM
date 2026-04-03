@@ -280,6 +280,9 @@ def main():
     print(f"Step 4 (last version): {before} → {len(data)}  (dropped {before - len(data)})", flush=True)
     print(f"  Last versions dropped: {last_versions}")
 
+    # Assign sequential IDs (1-based), placed as the first field
+    data = [{"id": i, **entry} for i, entry in enumerate(data, start=1)]
+
     # Analysis
     analysis = build_analysis(data)
     analysis_md = build_analysis_md(analysis, stats)

@@ -15,6 +15,7 @@
 
    - 去除 #define 的警告
    - 去除最后版本
+   - 添加id
 5. 切片提取 (slice/slice_joern)
 6. 大模型匹配 (llm_match)
 7. 人工标注 (annotate)

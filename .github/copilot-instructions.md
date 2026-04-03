@@ -12,8 +12,8 @@ The workflow is a sequential 7-stage pipeline, each stage in its own numbered di
 1_extractor               ✅ → Extract raw tool warnings → output/data_all.json
 2_algorithm_match         ✅ → Algorithm-based lifecycle labeling (TP/FP/Unknown) → output/data_all_labeled.json
 3_existing_data_separation✅ → Separate already-processed warnings from new work → output/data_remaining.json
-4_data_prepare            🔧 → Sub-stages (4_1_cwe_supplement, …) for filter/normalize
-5_slice                   📋 → Code slice extraction via Joern (placeholder)
+4_data_prepare            ✅ → Sub-stages (4_1_cwe_supplement, …) for filter/normalize → output/data_filtered.json
+5_slice                   🔧 → Code slice extraction via Joern → slice_output/slices.json
 6_llm_match               📋 → LLM-based matching (placeholder)
 7_annotate                📋 → Manual annotation (placeholder)
 ```
@@ -63,6 +63,19 @@ conda run -n cwe_supplement python analyze_cppcheck_rules.py  # → output/cppch
 cd 4_data_prepare/4_2_data_filter
 conda create -n data_filter python=3.11 -y && conda run -n data_filter pip install packaging
 conda run -n data_filter python filter.py  # → output/data_filtered.json + filter_stats.json + analysis.*
+
+# Stage 5 — Code slice extraction (Joern)
+cd 5_slice/slice_joern
+# Requires Joern installed at /opt/joern-cli and the 'slice' conda env
+conda activate slice
+python single_file_slicer.py   # → output/slices.json (with checkpoint resume)
+python show_progress.py        # → display progress from slice_output/progress.json
+
+# Stage 5 env setup
+conda create -n slice python=3.11 -y
+conda run -n slice pip install -r requirements.txt
+# tree-sitter-languages is needed for AST enhancement (recommended):
+conda run -n slice pip install tree-sitter-languages
 
 # Validate that all project_name_with_version values map to real repo directories
 # conda run -n extractor python validate_repo_paths.py   (run from 1_extractor/)
@@ -178,7 +191,51 @@ Raw data filenames always use dots (e.g., `curl-8.11.1_codeql.sarif`). When buil
 
 ## Resource Locations
 
-- `public/repository/` — source code for all project versions (used for slice extraction in stage 4)
+- `public/repository/` — source code for all project versions (used for slice extraction in stage 5)
 - `public/annotations_raw/data/` — original raw warning data (same as `1_extractor/input/data/`)
 - `1_extractor/input/repository/` — symlink/copy of source repos for stage 1 use
 - `1_extractor/input/data/项目版本.xlsx` — spreadsheet of all project versions
+
+## Stage 5: Code Slice Extraction
+
+Located in `5_slice/slice_joern/`. Reads `input/data_filtered.json` and `input/repository/` (source repos); writes to `slice_output/` (created at runtime, not `output/`).
+
+**Joern dependency**: requires Joern installed at `/opt/joern-cli` (provides `joern-parse` and `joern-export`).
+
+### Module Roles
+
+| File | Role |
+|------|------|
+| `single_file_slicer.py` | Entry point. `JoernAnalyzer` calls Joern per file; `SingleFileSlicer` orchestrates multi-process slicing with checkpoint resume |
+| `pdg_loader.py` | Parses Joern-exported DOT files into `PDG`/`PDGNode` graph objects |
+| `slice_engine.py` | Core PDG-based backward/forward slice traversal (`SliceEngine`) |
+| `ast_enhancer.py` | Uses tree-sitter to ensure sliced lines form syntactically valid code (bracket balancing, if-else completeness) |
+| `code_extractor.py` | Assembles final slice string; inserts `PLACEHOLDER` comments for omitted lines; extracts called function definitions |
+| `function_extractor.py` | Regex-based fallback for extracting called function definitions from source |
+| `treesitter_extractor.py` | tree-sitter-based accurate function extractor (preferred over `function_extractor.py`) |
+| `code_recoverer.py` | Replaces `PLACEHOLDER` comments back with original code (for LLM output post-processing) |
+| `config.py` | Central configuration: all paths, depths, feature flags, and per-rule depth overrides |
+
+### Key Configuration (`config.py`)
+
+- **Input/output paths** use `input/` and `output/` (standard pipeline convention)
+- **`BACKWARD_DEPTH`/`FORWARD_DEPTH`** default to 10; override per `rule_id` prefix via `RULE_SLICE_DEPTH_OVERRIDES`
+- **`ENABLE_AST_FIX`**: tree-sitter AST enhancement (on by default)
+- **`ENABLE_DEF_USE_AUGMENTATION`**: augment slices with def-use chains for assignment LHS at the warning line (on by default)
+- **`EMPTY_SLICE_FALLBACK`**: fall back to ±`CONTEXT_SIZE` lines if PDG yields no nodes (on by default)
+- **`EXTRACT_FUNCTION_CALLS`**: append called function definitions to slice output (on by default)
+- **`NUM_PROCESSES`**: parallel worker count (default 5); **`ENABLE_CHECKPOINT`**: resume from `slice_output/checkpoint.json`
+- **`CHUNK_SIZE`**: saves every 100 completed tasks to allow mid-run inspection
+
+### Slice Output Schema
+
+Each entry in `slice_output/slices.json` extends the warning schema with:
+
+```json
+{
+  "slice_code": "...",
+  "slice_lines": [1, 5, 7],
+  "function_name": "curl_easy_setopt",
+  "function_definitions": { "helper_fn": "..." }
+}
+```
