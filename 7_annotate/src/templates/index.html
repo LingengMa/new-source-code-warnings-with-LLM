@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>静态分析告警人工标注</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; color: #1a1a1a; height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── 顶栏 ── */
+  #topbar {
+    background: #1e293b; color: #fff; padding: 10px 20px;
+    display: flex; align-items: center; gap: 20px; flex-shrink: 0;
+  }
+  #topbar h1 { font-size: 16px; font-weight: 600; }
+  #stats { font-size: 13px; color: #94a3b8; margin-left: auto; }
+  #stats span { color: #fff; font-weight: 600; }
+  #export-btn {
+    background: #3b82f6; color: #fff; border: none; padding: 6px 14px;
+    border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  #export-btn:hover { background: #2563eb; }
+
+  /* ── 主布局 ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── 左侧列表 ── */
+  #sidebar {
+    width: 280px; background: #fff; border-right: 1px solid #e2e8f0;
+    display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  #sidebar-header {
+    padding: 12px 16px; border-bottom: 1px solid #e2e8f0;
+    font-size: 13px; color: #64748b; flex-shrink: 0;
+  }
+  #search {
+    width: 100%; padding: 8px 12px; border: 1px solid #e2e8f0;
+    border-radius: 6px; font-size: 13px; margin-top: 8px;
+  }
+  #list { overflow-y: auto; flex: 1; }
+  .list-item {
+    padding: 10px 16px; border-bottom: 1px solid #f1f5f9;
+    cursor: pointer; font-size: 12px; line-height: 1.5;
+    transition: background 0.1s;
+  }
+  .list-item:hover { background: #f8fafc; }
+  .list-item.active { background: #eff6ff; border-left: 3px solid #3b82f6; }
+  .list-item .item-id { color: #94a3b8; font-size: 11px; }
+  .list-item .item-tool { font-weight: 600; color: #1e40af; font-size: 11px; }
+  .list-item .item-msg { color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+  .list-item .item-ann { display: inline-block; padding: 1px 6px; border-radius: 9999px; font-size: 10px; font-weight: 700; margin-top: 3px; }
+  .ann-TP { background: #dcfce7; color: #166534; }
+  .ann-FP { background: #fee2e2; color: #991b1b; }
+  .ann-Unknown { background: #fef9c3; color: #713f12; }
+
+  /* ── 详情区 ── */
+  #detail { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  .card { background: #fff; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+  .card-title { font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+  .meta-item { font-size: 13px; }
+  .meta-label { color: #94a3b8; font-size: 11px; margin-bottom: 2px; }
+  .meta-value { color: #1e293b; word-break: break-all; }
+  .file-link { color: #3b82f6; cursor: pointer; text-decoration: underline; }
+  .file-link:hover { color: #1d4ed8; }
+
+  .cwe-tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px; }
+
+  /* ── 标签对比 ── */
+  .labels-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .label-col { text-align: center; }
+  .label-source { font-size: 11px; color: #64748b; margin-bottom: 6px; font-weight: 600; }
+  .label-badge {
+    display: inline-block; padding: 4px 12px; border-radius: 6px;
+    font-size: 13px; font-weight: 700; cursor: default;
+  }
+  .badge-TP { background: #dcfce7; color: #166534; }
+  .badge-FP { background: #fee2e2; color: #991b1b; }
+  .badge-Unknown { background: #fef9c3; color: #713f12; }
+  .badge-null { background: #f1f5f9; color: #94a3b8; }
+  .reason-toggle { font-size: 11px; color: #3b82f6; cursor: pointer; margin-top: 4px; }
+  .reason-text { font-size: 11px; color: #475569; margin-top: 4px; display: block; line-height: 1.5; }
+
+  /* ── 标注操作 ── */
+  #annotation-bar {
+    background: #fff; border-radius: 8px; padding: 16px 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #annotation-bar .bar-label { font-size: 13px; font-weight: 600; color: #374151; }
+  .ann-btn {
+    padding: 8px 20px; border-radius: 6px; border: 2px solid transparent;
+    font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.15s;
+  }
+  .ann-btn-TP { background: #dcfce7; color: #166534; border-color: #86efac; }
+  .ann-btn-TP:hover, .ann-btn-TP.selected { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .ann-btn-FP { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .ann-btn-FP:hover, .ann-btn-FP.selected { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .ann-btn-Unknown { background: #fef9c3; color: #713f12; border-color: #fde68a; }
+  .ann-btn-Unknown:hover, .ann-btn-Unknown.selected { background: #d97706; color: #fff; border-color: #d97706; }
+  .del-btn {
+    margin-left: auto; background: none; border: 1px solid #e2e8f0;
+    color: #94a3b8; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  .del-btn:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+  .nav-btn {
+    padding: 7px 14px; border-radius: 6px; border: 1px solid #e2e8f0;
+    background: #fff; color: #374151; cursor: pointer; font-size: 13px;
+  }
+  .nav-btn:hover { background: #f8fafc; }
+  #shortcut-hint { font-size: 11px; color: #94a3b8; margin-left: auto; }
+
+  /* ── 标注理由 ── */
+  #reason-row { width: 100%; margin-top: 10px; }
+  #reason-row label { font-size: 12px; color: #64748b; font-weight: 600; display: block; margin-bottom: 4px; }
+  #reason-input {
+    width: 100%; resize: vertical; border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 8px 10px; font-size: 13px; font-family: inherit; color: #374151;
+    background: #f8fafc; line-height: 1.5; min-height: 60px; transition: border-color 0.15s;
+  }
+  #reason-input:focus { outline: none; border-color: #3b82f6; background: #fff; }
+  .ann-reason-display {
+    font-size: 12px; color: #475569; margin-top: 6px; padding: 6px 10px;
+    background: #f1f5f9; border-radius: 5px; border-left: 3px solid #94a3b8;
+    display: none; white-space: pre-wrap; word-break: break-word; max-height: 80px; overflow-y: auto;
+  }
+  .ann-reason-display.visible { display: block; }
+
+  /* ── 消息文本 ── */
+  .message-text { font-size: 14px; color: #1e293b; line-height: 1.6; background: #f8fafc; padding: 12px; border-radius: 6px; }
+
+  /* ── 代码 ── */
+  pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 6px; overflow-x: auto; max-height: 500px; overflow-y: auto; }
+  .hl-line { background: rgba(250, 204, 21, 0.2); display: block; }
+
+  /* ── 源文件模态框 ── */
+  #modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  #modal-overlay.open { display: flex; }
+  #modal {
+    background: #fff; border-radius: 10px; width: 90vw; max-width: 1000px;
+    max-height: 90vh; display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  #modal-header {
+    padding: 14px 20px; border-bottom: 1px solid #e2e8f0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  #modal-title { font-size: 13px; font-weight: 600; color: #374151; flex: 1; word-break: break-all; }
+  #modal-open-btn {
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 5px;
+    font-size: 12px; cursor: pointer; color: #475569; padding: 3px 10px;
+    white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+  }
+  #modal-open-btn:hover { background: #e2e8f0; color: #1e293b; }
+  #modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #94a3b8; padding: 0 4px; }
+  #modal-close:hover { color: #1e293b; }
+  #modal-body { overflow-y: auto; padding: 0; flex: 1; }
+  #modal-body pre { border-radius: 0; max-height: none; }
+
+  /* ── 空状态 ── */
+  #empty { display: flex; align-items: center; justify-content: center; flex: 1; color: #94a3b8; font-size: 15px; }
+
+  /* ── 加载 ── */
+  #loading { display: flex; align-items: center; justify-content: center; flex: 1; color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div id="topbar">
+  <h1>📋 静态分析告警人工标注</h1>
+  <div id="stats">
+    已标注 <span id="stat-annotated">-</span> /
+    待标注 <span id="stat-total">-</span>
+    &nbsp;｜&nbsp;
+    <span class="ann-TP" style="padding:1px 6px;border-radius:4px;">TP <span id="stat-tp">0</span></span>
+    &nbsp;
+    <span class="ann-FP" style="padding:1px 6px;border-radius:4px;">FP <span id="stat-fp">0</span></span>
+    &nbsp;
+    <span class="ann-Unknown" style="padding:1px 6px;border-radius:4px;">? <span id="stat-un">0</span></span>
+  </div>
+  <button id="export-btn" onclick="exportData()">⬇ 导出</button>
+</div>
+
+<!-- 主区域 -->
+<div id="main">
+  <!-- 左侧列表 -->
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <div id="list-count">加载中...</div>
+      <input id="search" type="text" placeholder="搜索 ID / 工具 / 文件…" oninput="filterList()">
+    </div>
+    <div id="list"><div id="loading">加载中…</div></div>
+  </div>
+
+  <!-- 右侧详情 -->
+  <div id="detail">
+    <div id="empty">← 从左侧选择一条告警</div>
+  </div>
+</div>
+
+<!-- 源文件模态框 -->
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div id="modal">
+    <div id="modal-header">
+      <span id="modal-title"></span>
+      <a id="modal-open-btn" href="#" target="_blank" rel="noopener" title="在浏览器新标签页中打开原始文件">🔗 在新标签打开</a>
+      <button id="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modal-body"><pre id="modal-code"></pre></div>
+  </div>
+</div>
+
+<script>
+// ── 状态 ──────────────────────────────────────────────────
+let warnings = [];
+let filtered = [];
+let currentIdx = 0;
+
+// ── 初始化 ────────────────────────────────────────────────
+async function init() {
+  await loadWarnings();
+  await refreshStats();
+  if (filtered.length) showWarning(0);
+}
+
+async function loadWarnings() {
+  const res = await fetch('/api/warnings');
+  const json = await res.json();
+  if (!json.success) { alert('加载失败: ' + json.error); return; }
+  warnings = json.data;
+  filtered = [...warnings];
+  renderList();
+  document.getElementById('list-count').textContent = `共 ${filtered.length} 条待标注`;
+}
+
+async function refreshStats() {
+  const res = await fetch('/api/stats');
+  const json = await res.json();
+  if (!json.success) return;
+  const d = json.data;
+  document.getElementById('stat-annotated').textContent = d.annotated;
+  document.getElementById('stat-total').textContent = d.total;
+  document.getElementById('stat-tp').textContent = d.labels.TP;
+  document.getElementById('stat-fp').textContent = d.labels.FP;
+  document.getElementById('stat-un').textContent = d.labels.Unknown;
+}
+
+// ── 列表渲染 ──────────────────────────────────────────────
+function renderList() {
+  const list = document.getElementById('list');
+  if (!filtered.length) { list.innerHTML = '<div style="padding:20px;color:#94a3b8;text-align:center">无结果</div>'; return; }
+  list.innerHTML = filtered.map((w, i) => {
+    const ann = w.manual_annotation;
+    const annBadge = ann ? `<span class="item-ann ann-${ann.label}">${ann.label}</span>` : '';
+    return `<div class="list-item${i === currentIdx ? ' active' : ''}" onclick="showWarning(${i})" id="list-item-${i}">
+      <div class="item-id">#${w.id} &nbsp;<span class="item-tool">${w.tool_name}</span></div>
+      <div class="item-msg">${escHtml(w.message || '')}</div>
+      <div style="margin-top:3px;font-size:11px;color:#94a3b8">${w.project_name_with_version}</div>
+      ${annBadge}
+    </div>`;
+  }).join('');
+}
+
+function filterList() {
+  const q = document.getElementById('search').value.toLowerCase();
+  filtered = warnings.filter(w =>
+    !q ||
+    String(w.id).includes(q) ||
+    (w.tool_name || '').toLowerCase().includes(q) ||
+    (w.file_path || '').toLowerCase().includes(q) ||
+    (w.message || '').toLowerCase().includes(q) ||
+    (w.project_name_with_version || '').toLowerCase().includes(q)
+  );
+  currentIdx = 0;
+  renderList();
+  if (filtered.length) showWarning(0);
+  else document.getElementById('detail').innerHTML = '<div id="empty">← 无匹配结果</div>';
+  document.getElementById('list-count').textContent = `${filtered.length} / ${warnings.length} 条`;
+}
+
+// ── 详情渲染 ──────────────────────────────────────────────
+function showWarning(idx) {
+  if (idx < 0 || idx >= filtered.length) return;
+  currentIdx = idx;
+
+  // 高亮列表项
+  document.querySelectorAll('.list-item').forEach((el, i) => el.classList.toggle('active', i === idx));
+  const activeEl = document.getElementById(`list-item-${idx}`);
+  if (activeEl) activeEl.scrollIntoView({block: 'nearest'});
+
+  const w = filtered[idx];
+  const ann = w.manual_annotation;
+  const repoPath = `${w.project_name_with_version}/${w.file_path}`;
+
+  // ── 当前标注状态
+  const annLabel = ann ? ann.label : null;
+  const selTP = annLabel === 'TP' ? 'selected' : '';
+  const selFP = annLabel === 'FP' ? 'selected' : '';
+  const selUN = annLabel === 'Unknown' ? 'selected' : '';
+
+  // ── 五标签对比
+  const alg = w.label;
+  const llmKeys = ['wuwl', 'wuol', 'ouwl', 'ouol'];
+  const modeLabels = {
+    wuwl: '三分类<br>含算法标签',
+    wuol: '三分类<br>不含算法标签',
+    ouwl: '二分类<br>含算法标签',
+    ouol: '二分类<br>不含算法标签',
+  };
+
+  function labelCol(label, source, reason='') {
+    const cls = label ? `badge-${label}` : 'badge-null';
+    const txt = label || '—';
+    const reasonHtml = reason ? `<div class="reason-toggle" onclick="toggleReason(this)">收起理由 ▴</div><div class="reason-text">${escHtml(reason)}</div>` : '';
+    return `<div class="label-col">
+      <div class="label-source">${source}</div>
+      <span class="label-badge ${cls}">${txt}</span>
+      ${reasonHtml}
+    </div>`;
+  }
+
+  const llmCols = llmKeys.map(k => {
+    const r = (w.llm_results || {})[k] || {};
+    return labelCol(r.llm_label, modeLabels[k], r.llm_label_reason);
+  }).join('');
+
+  // ── 代码切片 (highlight warning line)
+  const codeHtml = renderCode(w.sliced_code || '', null);
+
+  document.getElementById('detail').innerHTML = `
+  <!-- 标注操作栏 -->
+  <div id="annotation-bar">
+    <span class="bar-label">人工标注 #${w.id}：</span>
+    <button class="ann-btn ann-btn-TP ${selTP}" onclick="annotate(${w.id}, 'TP')">T &nbsp; TP</button>
+    <button class="ann-btn ann-btn-FP ${selFP}" onclick="annotate(${w.id}, 'FP')">F &nbsp; FP</button>
+    <button class="ann-btn ann-btn-Unknown ${selUN}" onclick="annotate(${w.id}, 'Unknown')">U &nbsp; Unknown</button>
+    <button class="del-btn" onclick="deleteAnnotation(${w.id})">Del 删除</button>
+    <button class="nav-btn" onclick="prevWarning()">◀ A 上一条</button>
+    <button class="nav-btn" onclick="nextWarning()">D 下一条 ▶</button>
+    <button class="nav-btn" onclick="nextUnannotated()">N 下一个未标注</button>
+    <span id="shortcut-hint">${idx + 1} / ${filtered.length}</span>
+    <div id="reason-row">
+      <label for="reason-input">标注理由（可选）</label>
+      <textarea id="reason-input" placeholder="填写标注理由，例如：代码存在明确的边界检查缺失，确认为真实漏洞…" rows="3"></textarea>
+    </div>
+  </div>
+
+  <!-- 基本信息 -->
+  <div class="card">
+    <div class="card-title">基本信息</div>
+    <div class="meta-grid">
+      <div class="meta-item"><div class="meta-label">ID</div><div class="meta-value">${w.id}</div></div>
+      <div class="meta-item"><div class="meta-label">工具</div><div class="meta-value">${w.tool_name || '—'}</div></div>
+      <div class="meta-item"><div class="meta-label">规则</div><div class="meta-value">${escHtml(w.rule_id || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">CWE</div><div class="meta-value">${(w.cwe || []).map(c=>`<span class="cwe-tag">${c}</span>`).join('')||'—'}</div></div>
+      <div class="meta-item"><div class="meta-label">严重程度</div><div class="meta-value">${w.severity || '—'}</div></div>
+      <div class="meta-item"><div class="meta-label">项目</div><div class="meta-value">${w.project_name_with_version}</div></div>
+      <div class="meta-item"><div class="meta-label">文件</div><div class="meta-value"><span class="file-link" onclick="openFile('${escAttr(repoPath)}', ${w.line_number})">${escHtml(w.file_path || '—')}</span></div></div>
+      <div class="meta-item"><div class="meta-label">行号</div><div class="meta-value">${w.line_number}</div></div>
+      <div class="meta-item"><div class="meta-label">函数</div><div class="meta-value">${escHtml(w.function_name || '—')}</div></div>
+    </div>
+  </div>
+
+  <!-- 告警描述 -->
+  <div class="card">
+    <div class="card-title">告警描述</div>
+    <div class="message-text">${escHtml(w.message || '')}</div>
+  </div>
+
+  <!-- 五标签对比 -->
+  <div class="card">
+    <div class="card-title">五套标签对比</div>
+    <div class="labels-grid">
+      ${labelCol(alg, '算法追踪')}
+      ${llmCols}
+    </div>
+  </div>
+
+  <!-- 代码切片 -->
+  <div class="card">
+    <div class="card-title">代码切片（sliced_code）</div>
+    ${codeHtml}
+  </div>
+  `;
+
+  // 填充已有的标注理由
+  const reasonInput = document.getElementById('reason-input');
+  if (reasonInput) reasonInput.value = ann ? (ann.reason || '') : '';
+}
+
+function renderCode(code, highlightLine) {
+  if (!code) return '<pre style="color:#64748b">（无代码切片）</pre>';
+  const lines = escHtml(code).split('\n');
+  const html = lines.map((line, i) => {
+    const lineNum = i + 1;
+    const isHL = highlightLine && lineNum === highlightLine;
+    const marker = line.includes('The line where the warning is located');
+    return `<span${isHL || marker ? ' class="hl-line"' : ''}>${line}\n</span>`;
+  }).join('');
+  return `<pre>${html}</pre>`;
+}
+
+function renderFileCode(code, highlightLine) {
+  if (!code) return '<pre id="modal-code" style="color:#64748b">（无内容）</pre>';
+  const lines = escHtml(code).split('\n');
+  const html = lines.map((line, i) => {
+    const lineNum = i + 1;
+    const isHL = lineNum === highlightLine;
+    const ln = String(lineNum).padStart(5, ' ');
+    return `<span id="L${lineNum}"${isHL ? ' class="hl-line"' : ''}>${ln}  ${line}\n</span>`;
+  }).join('');
+  return `<pre id="modal-code">${html}</pre>`;
+}
+
+// ── 标注操作 ──────────────────────────────────────────────
+async function annotate(wid, label) {
+  const reason = (document.getElementById('reason-input')?.value || '').trim();
+  const res = await fetch('/api/annotate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: wid, label, reason})
+  });
+  const json = await res.json();
+  if (!json.success) { alert('标注失败: ' + json.error); return; }
+
+  // 更新本地数据
+  const ann = {label, reason, timestamp: new Date().toISOString()};
+  const w = warnings.find(x => x.id === wid);
+  if (w) w.manual_annotation = ann;
+  const fw = filtered.find(x => x.id === wid);
+  if (fw) fw.manual_annotation = ann;
+
+  renderList();
+  refreshStats();
+  nextUnannotated();
+}
+
+async function deleteAnnotation(wid) {
+  const res = await fetch(`/api/delete_annotation/${wid}`, {method: 'DELETE'});
+  const json = await res.json();
+  if (!json.success && json.error !== '标注不存在') { alert('删除失败: ' + json.error); return; }
+
+  const w = warnings.find(x => x.id === wid);
+  if (w) w.manual_annotation = null;
+  const fw = filtered.find(x => x.id === wid);
+  if (fw) fw.manual_annotation = null;
+
+  const reasonInput = document.getElementById('reason-input');
+  if (reasonInput) reasonInput.value = '';
+
+  renderList();
+  showWarning(currentIdx);
+  refreshStats();
+}
+
+// ── 导航 ─────────────────────────────────────────────────
+function prevWarning() { if (currentIdx > 0) showWarning(currentIdx - 1); }
+function nextWarning() { if (currentIdx < filtered.length - 1) showWarning(currentIdx + 1); }
+function nextUnannotated() {
+  for (let i = currentIdx + 1; i < filtered.length; i++) {
+    if (!filtered[i].manual_annotation) { showWarning(i); return; }
+  }
+  // wrap around
+  for (let i = 0; i < currentIdx; i++) {
+    if (!filtered[i].manual_annotation) { showWarning(i); return; }
+  }
+  alert('所有条目已标注！');
+}
+
+// ── 源文件查看 ────────────────────────────────────────────
+async function openFile(repoPath, lineNumber) {
+  document.getElementById('modal-title').textContent = repoPath;
+  document.getElementById('modal-open-btn').href = `/source/${repoPath}`;
+  document.getElementById('modal-body').innerHTML = '<pre id="modal-code">加载中…</pre>';
+  document.getElementById('modal-overlay').classList.add('open');
+
+  const res = await fetch(`/api/file?path=${encodeURIComponent(repoPath)}`);
+  const json = await res.json();
+  if (!json.success) {
+    document.getElementById('modal-body').innerHTML = `<pre id="modal-code"><span style="color:#f87171">错误: ${escHtml(json.error)}</span></pre>`;
+    return;
+  }
+  document.getElementById('modal-body').innerHTML = renderFileCode(json.content, lineNumber);
+  // scroll to line
+  if (lineNumber) {
+    setTimeout(() => {
+      const el = document.getElementById(`L${lineNumber}`);
+      if (el) el.scrollIntoView({block: 'center'});
+    }, 50);
+  }
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay') || e.type === 'click' && !e.target.closest('#modal')) {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+function toggleReason(el) {
+  const next = el.nextElementSibling;
+  if (next) {
+    const shown = next.style.display !== 'none';
+    next.style.display = shown ? 'none' : 'block';
+    el.textContent = shown ? '查看理由 ▾' : '收起理由 ▴';
+  }
+}
+
+// ── 导出 ─────────────────────────────────────────────────
+function exportData() { window.location.href = '/api/export'; }
+
+// ── 工具函数 ─────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+
+// ── 键盘快捷键 ────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const w = filtered[currentIdx];
+  if (!w) return;
+  switch(e.key.toLowerCase()) {
+    case 'a':       e.preventDefault(); prevWarning(); break;
+    case 'd':       e.preventDefault(); nextWarning(); break;
+    case 'n':       e.preventDefault(); nextUnannotated(); break;
+    case 't':       e.preventDefault(); annotate(w.id, 'TP'); break;
+    case 'f':       e.preventDefault(); annotate(w.id, 'FP'); break;
+    case 'u':       e.preventDefault(); annotate(w.id, 'Unknown'); break;
+    case 'delete':  e.preventDefault(); deleteAnnotation(w.id); break;
+    case 'escape':  document.getElementById('modal-overlay').classList.remove('open'); break;
+  }
+});
+
+// ── 启动 ──────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

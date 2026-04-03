@@ -1,0 +1,4 @@
+# prepare_data.py uses stdlib only; no external dependencies required.
+# Web app dependencies are in src/requirements.txt:
+#   Flask==3.0.0
+#   Flask-CORS==4.0.0

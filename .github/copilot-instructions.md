@@ -268,3 +268,57 @@ Located in `6_llm_match/`. Reads `input/slices_for_llm_with_label.json` and call
 Each mode reads from the same input file but uses a different prompt module from `prompts/`. Results are saved to `output/results_<mode>.json`. All four modes should be run on each dataset.
 
 Checkpoint resume is built-in: re-running a mode skips already-processed IDs. Progress is auto-saved every 10 entries; 5 parallel workers via `ThreadPoolExecutor`.
+
+After running all four modes, merge results:
+
+```bash
+cd 6_llm_match
+python merge.py  # → output/results_merged.json + output/analysis.json + output/analysis.md
+```
+
+`merge.py` combines the four result files into a single JSON where each entry gains a `llm_results` field keyed by short codes: `wuwl` (三分类+含算法标签), `wuol` (三分类+不含算法标签), `ouwl` (二分类+含算法标签), `ouol` (二分类+不含算法标签). `output/results_merged.json` is the input for stage 7.
+
+## Stage 7: Manual Annotation
+
+Located in `7_annotate/`. Targets entries where the 5 labels (1 algorithm + 4 LLM modes) are not fully consistent.
+
+### Data flow
+
+```
+input/results_merged.json  →  prepare_data.py  →  data.json (stage root)
+data.json + input/repository/  →  src/app.py (Flask)  →  annotations.json (stage root)
+```
+
+### Running
+
+```bash
+# 1. Prepare the subset requiring annotation
+cd 7_annotate
+conda run -n annotate python prepare_data.py   # → data.json in stage root
+
+# 2. Launch the annotation web app
+cd src
+conda activate annotate
+python app.py   # → http://localhost:5000
+```
+
+### Stage 7 env setup
+
+```bash
+conda create -n annotate python=3.11 -y
+conda run -n annotate pip install -r src/requirements.txt
+# requirements: Flask==3.0.0, Flask-CORS==4.0.0
+```
+
+### Key paths (relative to stage root `7_annotate/`)
+
+| Path | Description |
+|------|-------------|
+| `input/results_merged.json` | Output of stage 6 `merge.py` |
+| `data.json` | Filtered subset for annotation (created by `prepare_data.py`) |
+| `annotations.json` | Annotation results written by the Flask app |
+| `input/repository/` | Source code repos (for displaying file content in UI) |
+| `src/app.py` | Flask web server; reads `data.json`, writes `annotations.json` |
+| `src/templates/index.html` | Frontend annotation UI |
+
+The app exposes: `GET /api/warnings`, `GET /api/stats`, `POST /api/annotate`, `DELETE /api/delete_annotation/<id>`, `GET /api/file`, `GET /api/export`.
