@@ -9,20 +9,23 @@ This is a thesis dataset construction pipeline that extracts, matches, and annot
 The workflow is a sequential 7-stage pipeline, each stage in its own numbered directory:
 
 ```
-1_extractor               → Extract raw tool warnings → output/data_all.json
-2_algorithm_match         → Algorithm-based lifecycle labeling (TP/FP/Unknown) → output/data_all_labeled.json
-3_existing_data_separation→ Separate already-processed warnings from new work → output/
-4_data_prepare            → Filter/normalize (CWE top25, remove test/define warnings, remove last version)
-5_slice                   → Code slice extraction via Joern
-6_llm_match               → LLM-based matching
-7_annotate                → Manual annotation
+1_extractor               ✅ → Extract raw tool warnings → output/data_all.json
+2_algorithm_match         ✅ → Algorithm-based lifecycle labeling (TP/FP/Unknown) → output/data_all_labeled.json
+3_existing_data_separation✅ → Separate already-processed warnings from new work → output/data_remaining.json
+4_data_prepare            🔧 → Sub-stages (4_1_cwe_supplement, …) for filter/normalize
+5_slice                   📋 → Code slice extraction via Joern (placeholder)
+6_llm_match               📋 → LLM-based matching (placeholder)
+7_annotate                📋 → Manual annotation (placeholder)
 ```
+
+Stage 4 is organized as **numbered sub-directories** (`4_1_cwe_supplement/`, `4_2_…/`, etc.), each with its own `input/`, `output/`, `prompt.md`, and conda environment. Stages 5–7 are currently empty directories.
 
 Each stage reads from the previous stage's output. All stage scripts are Python. **All program output goes to the `output/` directory within each stage.** Documentation (beyond README) goes in `docs/`.
 
 ### Stage conventions (applies to all stages)
 - Each stage has its own conda environment and `requirements.txt`
 - Each stage may contain a `prompt.md` describing the original task specification
+- Documentation beyond README goes in `docs/` within each stage
 - **If input data looks wrong, fix it upstream — the downstream stage must not adapt around bad input data**
 
 ## Running the Stages
@@ -45,11 +48,31 @@ conda run -n matcher python tracker.py        # → output/data_all_labeled.json
 conda create -n matcher python=3.11 -y
 conda run -n matcher pip install packaging
 
-# Stage 3 — existing data separation
-python separate.py    # → output/data_remaining.json
+# Stage 3 — no external deps, standard library only
+python separate.py    # → output/data_remaining.json + output/stats.json
 # Filters data_all_labeled.json against llm_results_with_annotated_data_2510.json
 # Identity key: tool_name + project_name_with_version + file_path + line_number
+
+# Stage 4_1 — CWE supplement (once implemented)
+# cd 4_data_prepare/4_1_cwe_supplement
+# conda run -n <env> python <script>.py   # → output/data_cwe_enriched.json
+
+# Validate that all project_name_with_version values map to real repo directories
+# conda run -n extractor python validate_repo_paths.py   (run from 1_extractor/)
 ```
+
+## Utilities
+
+### utils/cwe-information/
+
+Converts CWE mapping spreadsheets (XLSX) to JSON for consumption by stage 4:
+
+```bash
+cd utils/cwe-information
+python excel_to_json.py   # converts all input/*.xlsx → output/*.json (mirrors directory structure)
+```
+
+Tool-specific mappings available: CodeQL (C/Java/Python), Cppcheck, Semgrep, CSA, Bandit, Horusec, SpotBugs. Output is consumed by `4_data_prepare/4_1_cwe_supplement/input/cwe_information/`.
 
 ## Unified Warning Schema
 
