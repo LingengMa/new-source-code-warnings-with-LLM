@@ -53,9 +53,16 @@ python separate.py    # → output/data_remaining.json + output/stats.json
 # Filters data_all_labeled.json against llm_results_with_annotated_data_2510.json
 # Identity key: tool_name + project_name_with_version + file_path + line_number
 
-# Stage 4_1 — CWE supplement (once implemented)
-# cd 4_data_prepare/4_1_cwe_supplement
-# conda run -n <env> python <script>.py   # → output/data_cwe_enriched.json
+# Stage 4_1 — CWE supplement
+cd 4_data_prepare/4_1_cwe_supplement
+conda create -n cwe_supplement python=3.11 -y   # standard library only, no pip deps
+conda run -n cwe_supplement python supplement.py              # → output/data_remaining_cwe_supplement.json + output/supplement_stats.json
+conda run -n cwe_supplement python analyze_cppcheck_rules.py  # → output/cppcheck_rule_analysis.json
+
+# Stage 4_2 — Data filtering
+cd 4_data_prepare/4_2_data_filter
+conda create -n data_filter python=3.11 -y && conda run -n data_filter pip install packaging
+conda run -n data_filter python filter.py  # → output/data_filtered.json + filter_stats.json + analysis.*
 
 # Validate that all project_name_with_version values map to real repo directories
 # conda run -n extractor python validate_repo_paths.py   (run from 1_extractor/)
@@ -94,6 +101,40 @@ All extracted warnings conform to this structure (see `1_extractor/input/sample.
 ```
 
 Stage 2 input (`data_all.json` copied as `data_with_id.json` after adding UUIDs) adds a UUID `id` field per warning. Stage 2 output (`data_all_labeled.json`) further adds a `label` field: `TP`, `FP`, or `Unknown`.
+
+## Stage 4: Data Preparation Sub-Stages
+
+Stage 4 is a multi-step sub-pipeline. Each sub-stage feeds the next:
+
+```
+4_1_cwe_supplement  → data_remaining_cwe_supplement.json
+4_2_data_filter     → (TBD, reads 4_1 output)
+```
+
+### Stage 4_1: CWE Supplement
+
+Fills empty `cwe` fields in `data_remaining.json` via `rule_id` lookups. Strategy per tool:
+
+| Tool | Source file | Key field | Coverage |
+|------|-------------|-----------|----------|
+| codeql | `cwe_information/codeql/merged_codeql_C_report.json` | `ruleId` → `rule.properties.tags` | 100% |
+| cppcheck | `cwe_information/merged_cppcheck_report.json` | `id` → integer `cwe` | partial (9 diagnostic rule_ids have no CWE) |
+| csa | `cwe_information/csa_merged_cwe.json` | `Bug Type` = `rule_id` | 100% |
+| semgrep | — | already complete | — |
+
+CWE values are **never overwritten** — only empty `cwe` lists are filled. Format: `["CWE-NNN"]`.
+
+The 222,235 cppcheck entries that remain empty after supplement all correspond to tool-internal diagnostic rule IDs (e.g. `internalError`, `missingInclude`, `syntaxError`). These have no applicable CWE and should be **filtered out** in stage 4_2.
+
+### Stage 4_2: Data Filtering ✅
+
+Reads `4_1_cwe_supplement/output/data_remaining_cwe_supplement.json`. Applies filters in this order:
+
+1. **CWE top25**: keep only entries whose `cwe` list intersects `input/cwe-top25` (drop entries with empty `cwe` here too)
+2. **Test files**: drop entries where `file_path` is a test file (patterns vary by project — analyze before hardcoding)
+3. **`#define` lines**: look up `input/repository/<project_name_with_version>/<file_path>` at `line_number`; drop if the line is a `#define`
+4. **Last version**: for each `project_name`, identify the latest version and drop all its entries
+5. **Analysis**: after filtering, output distribution stats by CWE, project, and tool
 
 ## Stage 2: Algorithm Matching Design
 

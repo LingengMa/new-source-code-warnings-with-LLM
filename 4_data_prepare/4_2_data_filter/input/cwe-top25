@@ -1,0 +1,27 @@
+排名 | CWE编号 | Weakness Name (English)                                           | 中文意译
+-----+--------+------------------------------------------------------------------+--------------------------
+  1  | CWE-79 | Improper Neutralization of Input During Web Page Generation       | 跨站脚本（XSS）
+  2  | CWE-89 | Improper Neutralization of Special Elements used in an SQL Command| SQL 注入
+  3  | CWE-352| Cross-Site Request Forgery (CSRF)                                 | 跨站请求伪造
+  4  | CWE-862| Missing Authorization                                            | 缺失授权
+  5  | CWE-787| Out-of-bounds Write                                               | 越界写
+  6  | CWE-22 | Improper Limitation of a Pathname to a Restricted Directory       | 路径遍历
+  7  | CWE-416| Use After Free                                                    | 释放后使用
+  8  | CWE-125| Out-of-bounds Read                                                | 越界读
+  9  | CWE-78 | Improper Neutralization of Special Elements used in an OS Command | 操作系统命令注入
+ 10  | CWE-94 | Improper Control of Generation of Code                            | 代码注入
+ 11  | CWE-120| Buffer Copy without Checking Size of Input                        | 经典缓冲区溢出
+ 12  | CWE-434| Unrestricted Upload of File with Dangerous Type                  | 不受限制的危险文件上传
+ 13  | CWE-476| NULL Pointer Dereference                                          | 空指针解引用
+ 14  | CWE-121| Stack-based Buffer Overflow                                      | 栈缓冲区溢出
+ 15  | CWE-502| Deserialization of Untrusted Data                                | 不可信数据反序列化
+ 16  | CWE-122| Heap-based Buffer Overflow                                       | 堆缓冲区溢出
+ 17  | CWE-863| Incorrect Authorization                                          | 授权逻辑错误
+ 18  | CWE-20 | Improper Input Validation                                        | 输入验证不当
+ 19  | CWE-284| Improper Access Control                                          | 不当的访问控制
+ 20  | CWE-200| Exposure of Sensitive Information to an Unauthorized Actor       | 敏感信息泄露
+ 21  | CWE-306| Missing Authentication for Critical Function                     | 关键功能缺失认证
+ 22  | CWE-918| Server-Side Request Forgery (SSRF)                                | 服务器端请求伪造
+ 23  | CWE-77 | Improper Neutralization of Special Elements used in a Command     | 命令注入（泛型）
+ 24  | CWE-639| Authorization Bypass Through User-Controlled Key                 | 用户可控键导致的授权绕过
+ 25  | CWE-770| Allocation of Resources Without Limits or Throttling             | 资源分配未限制（DoS）
