@@ -13,12 +13,12 @@ The workflow is a sequential 7-stage pipeline, each stage in its own numbered di
 2_algorithm_match         ✅ → Algorithm-based lifecycle labeling (TP/FP/Unknown) → output/data_all_labeled.json
 3_existing_data_separation✅ → Separate already-processed warnings from new work → output/data_remaining.json
 4_data_prepare            ✅ → Sub-stages (4_1_cwe_supplement, …) for filter/normalize → output/data_filtered.json
-5_slice                   🔧 → Code slice extraction via Joern → slice_output/slices.json
-6_llm_match               📋 → LLM-based matching (placeholder)
-7_annotate                📋 → Manual annotation (placeholder)
+5_slice/slice_joern       ✅ → Code slice extraction via Joern → output/slices_for_llm_with_label.json
+6_llm_match               ✅ → DeepSeek LLM classification (4 modes) → output/results_*.json
+7_annotate                📋 → Manual annotation
 ```
 
-Stage 4 is organized as **numbered sub-directories** (`4_1_cwe_supplement/`, `4_2_…/`, etc.), each with its own `input/`, `output/`, `prompt.md`, and conda environment. Stages 5–7 are currently empty directories.
+Stage 4 is organized as **numbered sub-directories** (`4_1_cwe_supplement/`, `4_2_…/`, etc.), each with its own `input/`, `output/`, `prompt.md`, and conda environment.
 
 Each stage reads from the previous stage's output. All stage scripts are Python. **All program output goes to the `output/` directory within each stage.** Documentation (beyond README) goes in `docs/`.
 
@@ -69,13 +69,21 @@ cd 5_slice/slice_joern
 # Requires Joern installed at /opt/joern-cli and the 'slice' conda env
 conda activate slice
 python single_file_slicer.py   # → output/slices.json (with checkpoint resume)
-python show_progress.py        # → display progress from slice_output/progress.json
+python recover_failed.py       # retry entries with status="error" from a previous run
+python show_progress.py        # display progress from output/progress.json
 
 # Stage 5 env setup
 conda create -n slice python=3.11 -y
 conda run -n slice pip install -r requirements.txt
 # tree-sitter-languages is needed for AST enhancement (recommended):
 conda run -n slice pip install tree-sitter-languages
+
+# Stage 6 — LLM classification (requires DEEPSEEK_API_KEY env variable)
+cd 6_llm_match
+python llm.py --mode with_unknown_without_label     # 三分类, no algorithm label
+python llm.py --mode without_unknown_without_label  # 二分类, no algorithm label
+python llm.py --mode with_unknown_with_label        # 三分类, with algorithm label
+python llm.py --mode without_unknown_with_label     # 二分类, with algorithm label
 
 # Validate that all project_name_with_version values map to real repo directories
 # conda run -n extractor python validate_repo_paths.py   (run from 1_extractor/)
@@ -198,7 +206,7 @@ Raw data filenames always use dots (e.g., `curl-8.11.1_codeql.sarif`). When buil
 
 ## Stage 5: Code Slice Extraction
 
-Located in `5_slice/slice_joern/`. Reads `input/data_filtered.json` and `input/repository/` (source repos); writes to `slice_output/` (created at runtime, not `output/`).
+Located in `5_slice/slice_joern/`. Reads `input/data_filtered.json` and `input/repository/` (source repos); writes to `output/`.
 
 **Joern dependency**: requires Joern installed at `/opt/joern-cli` (provides `joern-parse` and `joern-export`).
 
@@ -224,12 +232,12 @@ Located in `5_slice/slice_joern/`. Reads `input/data_filtered.json` and `input/r
 - **`ENABLE_DEF_USE_AUGMENTATION`**: augment slices with def-use chains for assignment LHS at the warning line (on by default)
 - **`EMPTY_SLICE_FALLBACK`**: fall back to ±`CONTEXT_SIZE` lines if PDG yields no nodes (on by default)
 - **`EXTRACT_FUNCTION_CALLS`**: append called function definitions to slice output (on by default)
-- **`NUM_PROCESSES`**: parallel worker count (default 5); **`ENABLE_CHECKPOINT`**: resume from `slice_output/checkpoint.json`
+- **`NUM_PROCESSES`**: parallel worker count (default 5); **`ENABLE_CHECKPOINT`**: resume from `output/checkpoint.json`
 - **`CHUNK_SIZE`**: saves every 100 completed tasks to allow mid-run inspection
 
 ### Slice Output Schema
 
-Each entry in `slice_output/slices.json` extends the warning schema with:
+Each entry in `output/slices.json` extends the warning schema with:
 
 ```json
 {
@@ -239,3 +247,24 @@ Each entry in `slice_output/slices.json` extends the warning schema with:
   "function_definitions": { "helper_fn": "..." }
 }
 ```
+
+Stage 5 also writes `output/slices_for_llm.json` (no label) and `output/slices_for_llm_with_label.json` (with label), which are the inputs for stage 6.
+
+## Stage 6: LLM Matching
+
+Located in `6_llm_match/`. Reads `input/slices_for_llm_with_label.json` and calls the DeepSeek API to classify each warning.
+
+**Requires** `DEEPSEEK_API_KEY` environment variable. Uses `deepseek-chat` model with `response_format={'type': 'json_object'}` (DeepSeek JSON Output mode).
+
+### Four Modes
+
+| Mode | Classes | Algorithm label included |
+|------|---------|--------------------------|
+| `with_unknown_without_label` | TP/FP/Unknown | No |
+| `without_unknown_without_label` | TP/FP | No |
+| `with_unknown_with_label` | TP/FP/Unknown | Yes |
+| `without_unknown_with_label` | TP/FP | Yes |
+
+Each mode reads from the same input file but uses a different prompt module from `prompts/`. Results are saved to `output/results_<mode>.json`. All four modes should be run on each dataset.
+
+Checkpoint resume is built-in: re-running a mode skips already-processed IDs. Progress is auto-saved every 10 entries; 5 parallel workers via `ThreadPoolExecutor`.
