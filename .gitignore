@@ -1,2 +1,2 @@
 *.json
-!finally_dataset
+!finally_dataset/**/*.json
