@@ -15,7 +15,8 @@ The workflow is a sequential 7-stage pipeline, each stage in its own numbered di
 4_data_prepare            ✅ → Sub-stages (4_1_cwe_supplement, …) for filter/normalize → output/data_filtered.json
 5_slice/slice_joern       ✅ → Code slice extraction via Joern → output/slices_for_llm_with_label.json
 6_llm_match               ✅ → DeepSeek LLM classification (4 modes) → output/results_*.json
-7_annotate                📋 → Manual annotation
+7_annotate                ✅ → Manual annotation → annotations.json
+8_data_merge              ✅ → Merge old + new batches into final dataset → output/merged_all.json
 ```
 
 Stage 4 is organized as **numbered sub-directories** (`4_1_cwe_supplement/`, `4_2_…/`, etc.), each with its own `input/`, `output/`, `prompt.md`, and conda environment.
@@ -322,3 +323,64 @@ conda run -n annotate pip install -r src/requirements.txt
 | `src/templates/index.html` | Frontend annotation UI |
 
 The app exposes: `GET /api/warnings`, `GET /api/stats`, `POST /api/annotate`, `DELETE /api/delete_annotation/<id>`, `GET /api/file`, `GET /api/export`.
+
+## Stage 8: Data Merge
+
+Located in `8_data_merge/`. Merges old and new processing batches into a unified final dataset.
+
+### Data flow
+
+```
+input/previous/llm_results_with_annotated_data_2510.json  ─┐
+input/previous/llm_results_with_annotated_data_1025.json  ─┤
+input/llm_results_with_annotated_data_2386.json           ─┼─→ merge.py → output/merged_all.json + merged_annotated.json
+input/llm_results_with_annotated_data_873.json            ─┘
+```
+
+- **merged_all.json** — all entries (old 2510 + new 2386 = 4896)
+- **merged_annotated.json** — only manually annotated inconsistent entries (old 1025 + new 873 = 1898)
+
+### ID assignment
+
+Old entries keep their original IDs (1–2510) unchanged. New entries are assigned IDs starting at `old_max_id + 1 = 2511`, in the order they appear in the new-all file. The same remap is applied to the new-annotated subset.
+
+### Inconsistency criterion
+
+An entry is "inconsistent" when the algorithm `label` disagrees with **at least one** of the four `llm_results` values (`wuwl`, `wuol`, `ouwl`, `ouol`). These entries require manual annotation.
+
+### Final label priority
+
+`manual_annotation` (if non-null/non-empty) overrides algorithm `label`. Applied by `analyze.py`.
+
+### Canonical entry key order (`normalize_entry`)
+
+```
+id, tool_name, project_name, project_name_with_version, project_version,
+file_path, line_number, cwe, rule_id, message, severity, function_name,
+label, llm_results, sliced_code, manual_annotation, annotation_reason,
+annotation_timestamp
+```
+
+### Running
+
+```bash
+cd 8_data_merge
+# No external dependencies — standard library only
+conda create -n data_merge python=3.11 -y
+
+python merge.py    # → output/merged_all.json, output/merged_annotated.json
+python analyze.py  # → output/analysis.json, output/analysis.md
+```
+
+## Final Dataset (`finally_dataset/`)
+
+Stores the canonical final outputs across processing batches:
+
+| Path | Description |
+|------|-------------|
+| `previous/llm_results_with_annotated_data_2510.json` | Old batch — all entries |
+| `previous/llm_results_with_annotated_data_1025.json` | Old batch — annotated inconsistent entries |
+| `now/llm_results_with_annotated_data_2386.json` | New batch — all entries |
+| `now/llm_results_with_annotated_data_873.json` | New batch — annotated inconsistent entries |
+| `all/llm_results_with_annotated_data_4896.json` | Combined — all entries |
+| `all/llm_results_with_annotated_data_1898.json` | Combined — annotated inconsistent entries |

@@ -1,0 +1,2 @@
+# requirements.txt
+# Stage 8 uses only Python standard library — no external packages required.

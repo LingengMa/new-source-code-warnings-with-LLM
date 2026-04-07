@@ -9,11 +9,15 @@ input/results_merged.json   ← 来自 6_llm_match/output/results_merged.json
         ↓
   prepare_data.py
         ↓
-   data.json（根目录）       ← 五套标签不完全一致的告警子集
+   data.json（根目录）        ← 五套标签不完全一致的告警子集（873 条）
         ↓
   src/app.py（Flask Web）
         ↓
-  annotations.json（根目录） ← 人工标注结果
+  annotations.json（根目录）  ← 人工标注结果（key=id）
+        ↓
+  merge.py
+        ↓
+  output/merged_annotated.json  ← 最终完整数据集（2386 条，含一致 + 人工标注）
 ```
 
 ### 五套标签
@@ -56,18 +60,38 @@ python app.py
 
 > 源文件浏览功能需要 `input/repository/` 目录下有对应的代码仓库（软链接或目录）。
 
+### 4. 合并最终数据集
+
+人工标注完成后，运行以下命令将人工标注结果与一致条目合并为完整数据集：
+
+```bash
+cd 7_annotate
+conda run -n annotate python merge.py
+# 输出: output/merged_annotated.json（全量，2386 条）, output/merge_stats.json
+```
+
+合并规则：
+
+| 条目类型 | 标注来源 | annotation_reason |
+|----------|----------|-------------------|
+| 五套标签完全一致（1513 条）| 自动采用一致标签 | "所有标签…完全一致，无需人工审核，自动采用一致标签。" |
+| 五套标签不完全一致（873 条）| 来自 `annotations.json`（人工标注）| 人工填写的理由 |
+
 ## 文件结构
 
 ```
 7_annotate/
 ├── prepare_data.py          # 分离待标注子集 → data.json
+├── merge.py                 # 合并标注结果 → output/merged_annotated.json
 ├── data.json                # 运行 prepare_data.py 后生成
 ├── annotations.json         # 标注工具写入的标注结果
 ├── input/
 │   ├── results_merged.json  # Stage 6 merge.py 的输出（含五套标签）
 │   └── repository/          # 各项目源代码（用于源文件查看）
 ├── output/
-│   └── prepare_stats.json   # prepare_data.py 的统计摘要
+│   ├── prepare_stats.json   # prepare_data.py 的统计摘要
+│   ├── merged_annotated.json  # merge.py 的最终完整数据集（全量）
+│   └── merge_stats.json     # merge.py 的合并统计摘要
 └── src/
     ├── app.py               # Flask Web 标注服务
     ├── requirements.txt     # Flask==3.0.0, Flask-CORS==4.0.0
