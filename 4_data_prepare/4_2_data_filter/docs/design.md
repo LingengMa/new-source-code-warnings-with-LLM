@@ -80,17 +80,17 @@ neontest  _fuzzer.  _fuzz.  _bench.
 
 ---
 
-## Filter 3: `#define` Line Filter
+## Filter 3: `#include` Line Filter
 
 For each entry, the script resolves
 `input/repository/<project_name_with_version>/<file_path>` and reads line
 `line_number` (1-indexed). If the line (stripped of leading whitespace) starts
-with `#define`, the entry is dropped.
+with `#include`, the entry is dropped.
 
 **Result: 0 entries dropped.** None of the ~3,140 post-step-2 entries land on a
-`#define` line. This is expected: the top-25 CWEs correspond to runtime-safety
+`#include` line. This is expected: the top-25 CWEs correspond to runtime-safety
 issues (null pointer, buffer overflow, use-after-free) reported on executable code
-lines, not on macro definitions.
+lines, not on header inclusion directives.
 
 **Missing files: 320.** These entries could not be verified because the source file
 was not found in `input/repository/`. They are **kept** (not silently dropped) to

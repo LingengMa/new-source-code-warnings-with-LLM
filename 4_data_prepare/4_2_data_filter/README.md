@@ -15,7 +15,7 @@ relevant for vulnerability annotation.
 |------|-------------|
 | `input/data_remaining_cwe_supplement.json` | 430,496 warnings from stage 4_1 |
 | `input/cwe-top25` | CWE top-25 list (text file with CWE-NNN tokens) |
-| `input/repository/` | Symlink to source repositories for `#define` lookup |
+| `input/repository/` | Symlink to source repositories for `#include` lookup |
 | `output/data_filtered.json` | Final filtered dataset |
 | `output/filter_stats.json` | Counts before/after each filter step |
 | `output/analysis.json` | Distribution by CWE, project, tool, label (JSON) |
@@ -43,7 +43,7 @@ Filters are applied in this order:
 
 1. **CWE top25** — keep entries whose `cwe` list intersects the top-25 set
 2. **Test files** — drop entries from test/fuzz/benchmark source files
-3. **`#define` lines** — drop entries whose target source line is a `#define`
+3. **`#include` lines** — drop entries whose target source line is a `#include`
 4. **Last version** — drop entries from the latest known version of each project
 
 See `docs/design.md` for detailed rationale.
@@ -54,7 +54,7 @@ See `docs/design.md` for detailed rationale.
 |------|--------|-------|---------|
 | 1 — CWE top25 | 430,496 | 3,245 | 427,251 |
 | 2 — test files | 3,245 | 3,140 | 105 |
-| 3 — #define | 3,140 | 3,140 | 0 |
+| 3 — #include | 3,140 | 3,140 | 0 |
 | 4 — last version | 3,140 | 2,386 | 754 |
 | **Final** | | **2,386** | |
 

@@ -4,7 +4,7 @@ Stage 4_2: Warning Data Filtering
 Applies four sequential filters to data_remaining_cwe_supplement.json:
   1. CWE top25: keep only entries whose cwe list intersects the top-25 set
   2. Test files: drop entries from test/fuzz/benchmark source files
-  3. #define lines: drop entries whose target source line is a #define
+  3. #include lines: drop entries whose target source line is a #include
   4. Last version: drop entries from the latest version of each project
 
 Run: conda run -n data_filter python filter.py
@@ -97,7 +97,7 @@ def filter_test_files(data: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Step 3: #define line filter
+# Step 3: #include line filter
 # ---------------------------------------------------------------------------
 
 def _read_file_lines(path: Path) -> list[str] | None:
@@ -112,8 +112,8 @@ def _read_file_lines(path: Path) -> list[str] | None:
 
 def is_define_line(entry: dict, file_cache: dict) -> bool:
     """
-    Return True if the warning's target line is a #define.
-    Missing files are treated as non-define (entry is kept).
+    Return True if the warning's target line is a #include.
+    Missing files are treated as non-include (entry is kept).
     """
     key = (entry["project_name_with_version"], entry["file_path"])
     if key not in file_cache:
@@ -127,10 +127,10 @@ def is_define_line(entry: dict, file_cache: dict) -> bool:
     if not (0 <= line_idx < len(lines)):
         return False  # line out of range — keep entry
 
-    return lines[line_idx].lstrip().startswith("#define")
+    return lines[line_idx].lstrip().startswith("#include")
 
 
-def filter_define_lines(data: list[dict]) -> tuple[list[dict], int]:
+def filter_include_lines(data: list[dict]) -> tuple[list[dict], int]:
     file_cache: dict = {}
     missing = 0
     kept = []
@@ -257,16 +257,16 @@ def main():
     stats["2_test_files"] = {"before": before, "after": len(data), "dropped": before - len(data)}
     print(f"Step 2 (test files):   {before} → {len(data)}  (dropped {before - len(data)})", flush=True)
 
-    # Step 3 — #define lines
+    # Step 3 — #include lines
     before = len(data)
-    data, missing_files = filter_define_lines(data)
-    stats["3_define_lines"] = {
+    data, missing_files = filter_include_lines(data)
+    stats["3_include_lines"] = {
         "before": before,
         "after": len(data),
         "dropped": before - len(data),
         "missing_files": missing_files,
     }
-    print(f"Step 3 (#define):      {before} → {len(data)}  (dropped {before - len(data)}, missing files: {missing_files})", flush=True)
+    print(f"Step 3 (#include):     {before} → {len(data)}  (dropped {before - len(data)}, missing files: {missing_files})", flush=True)
 
     # Step 4 — Last version
     before = len(data)

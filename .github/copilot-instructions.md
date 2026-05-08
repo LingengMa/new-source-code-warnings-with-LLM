@@ -154,7 +154,7 @@ Reads `4_1_cwe_supplement/output/data_remaining_cwe_supplement.json`. Applies fi
 
 1. **CWE top25**: keep only entries whose `cwe` list intersects `input/cwe-top25` (drop entries with empty `cwe` here too)
 2. **Test files**: drop entries where `file_path` is a test file (patterns vary by project — analyze before hardcoding)
-3. **`#define` lines**: look up `input/repository/<project_name_with_version>/<file_path>` at `line_number`; drop if the line is a `#define`
+3. **`#include` lines**: look up `input/repository/<project_name_with_version>/<file_path>` at `line_number`; drop if the line is a `#include`
 4. **Last version**: for each `project_name`, identify the latest version and drop all its entries
 5. **Analysis**: after filtering, output distribution stats by CWE, project, and tool
 
